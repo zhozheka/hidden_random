@@ -26,13 +26,12 @@ imagenet = {
     ])
 }
 
-#bowl_normalization = T.Normalize([0.164, 0.149, 0.182, 0.], [0.258, 0.238, 0.290, 1.])
 bowl_normalization = T.Normalize([0.053, 0.046, 0.061, 0.], [0.109, 0.087, 0.143, 1.])
 bowl = {
     'train': T.Compose([
         T.Resize((256, 256)),
-        #T.RandomVerticalFlip(),
-        #T.RandomHorizontalFlip(),
+        T.RandomVerticalFlip(),
+        T.RandomHorizontalFlip(),
         T.ToTensor(),
         bowl_normalization
     ]),

@@ -17,9 +17,10 @@ from models import get_model
 class Trainer:
     def __init__(self, args):
         # set logging and model paths
-        self.model_name = '{}_{}_{}_{}'.format(
+        self.model_name = '{}_{}_{}_{}_{}'.format(
             args.model,
             args.sparsity,
+            args.init_type,
             args.dataset,
             datetime.now().strftime('%Y_%b_%d_%H:%M:%S')
         )
@@ -28,6 +29,7 @@ class Trainer:
 
         self.logger = get_logger(os.path.join(self.model_dir, 'training.log'))
         self.logger.info(args)
+        self.logger.info('Model dir: {}'.format(self.model_dir))
         self.args = args
 
         self.save_chp = not args.not_save
@@ -36,22 +38,36 @@ class Trainer:
         self.num_classes = len(self.loaders['train'].dataset.classes)
         self.dataset_name = args.dataset
         self.sparsity = args.sparsity / 100
-        self.model = get_model(args, self.num_classes, sparsity=self.sparsity).to(self.device)
+        self.epochs = args.epochs
+        self.init_type = args.init_type
+        self.model = get_model(args, self.num_classes, sparsity=self.sparsity, init_type=self.init_type).to(self.device)
 
-        self.logger.info([name for name, p in self.model.named_parameters() if p.requires_grad])
+        if args.from_checkpoint:
+            self.load_checkpoint(args.from_checkpoint)
 
         self.optimizer = torch.optim.SGD([p for p in self.model.parameters() if p.requires_grad],
                                          lr=args.lr,  momentum=args.momentum, weight_decay=args.wd)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=args.patience)
+
+        self.logger.info([name for name, p in self.model.named_parameters() if p.requires_grad])
+
+        # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=args.patience)
+
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, self.epochs)
         self.loss = nn.CrossEntropyLoss()
 
-        self.epochs = args.epochs
         self.save_interval = args.save_interval
         self.verbose_interval = args.verbose_interval
-        self.best_acc = 0.
+        self.best_score = 0.
+
+    def load_checkpoint(self, chp_path):
+        chp = torch.load(chp_path)
+        assert self.model_name
+        self.model.load_state_dict(chp['state_dict'])
+        self.optimizer = chp['optimizer']
 
     def process_epoch(self, epoch, stage):
         assert stage in ['train', 'val']
+
         if stage == 'train':
             self.model.train()
         else:
@@ -96,7 +112,8 @@ class Trainer:
                         meter_loss.val, meter_loss.avg,
                         meter_accuracy.val, meter_accuracy.avg
                     ))
-        return meter_loss.avg, meter_accuracy.avg
+        score = meter_iou.avg if self.dataset_name == 'bowl' else meter_accuracy.avg
+        return meter_loss.avg, score
 
     def save_model(self, name, epoch=None):
         chp = {
@@ -111,7 +128,7 @@ class Trainer:
 
         chp_path = os.path.join(self.model_dir, '{}.pth'.format(name))
         torch.save(chp, chp_path)
-        #self.logger.info('Checkpoint {} saved'.format(chp_path))
+        # self.logger.info('Checkpoint {} saved'.format(chp_path))
         return chp_path
 
     def train(self):
@@ -124,14 +141,15 @@ class Trainer:
 
             self.logger.info('\nValidation:')
             with torch.no_grad():
-                val_loss, val_acc = self.process_epoch(epoch, 'val')
+                val_loss, val_score = self.process_epoch(epoch, 'val')
 
-            if val_acc > self.best_acc:
-                self.best_acc = val_acc
+            if val_score > self.best_score:  # trying to maximize
+                self.best_score = val_score
                 self.logger.info('New best checkpoint')
                 self.save_model('best', epoch)
 
-            self.scheduler.step(val_loss)
+            # self.scheduler.step(val_loss)
+            self.scheduler.step(epoch)
 
             if epoch % self.save_interval == 0 and self.save_interval > 0 or epoch == self.epochs:
                 if self.save_chp:
@@ -182,7 +200,10 @@ def parse_args():
     parser.add_argument('-momentum', default=0.9, type=float)
     parser.add_argument('-wd', default=0.0005,   type=float)
     parser.add_argument('-sparsity', default=50, type=int)
-    parser.add_argument('-patience', default=5, type=int)
+    parser.add_argument('-patience', default=5, type=int),
+    parser.add_argument('-bilinear', action='store_true', help='Upsampling for U-net')
+    parser.add_argument('-init_type', default='normal')
+    parser.add_argument('-from_checkpoint', default='')
     args = parser.parse_args()
     return args
 

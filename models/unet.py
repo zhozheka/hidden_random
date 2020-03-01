@@ -6,21 +6,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .layers import SupermaskConv, SupermaskConvTranspose
 
+sparsity_glb = -1
+init_type_glb = ''
+
 
 class DoubleConv(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""
 
-    def __init__(self, sparsity, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
         self.double_conv = nn.Sequential(
             #nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-            SupermaskConv(sparsity=sparsity, in_channels=in_channels, out_channels=out_channels, kernel_size=3,
-                          padding=1, bias=False),
+            SupermaskConv(sparsity=sparsity_glb, init_type=init_type_glb, in_channels=in_channels,
+                          out_channels=out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels, affine=False),
             nn.ReLU(inplace=True),
             #nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            SupermaskConv(sparsity=sparsity, in_channels=out_channels, out_channels=out_channels, kernel_size=3,
-                          padding=1, bias=False),
+            SupermaskConv(sparsity=sparsity_glb, init_type=init_type_glb, in_channels=out_channels,
+                          out_channels=out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels, affine=False),
             nn.ReLU(inplace=True)
         )
@@ -32,11 +35,11 @@ class DoubleConv(nn.Module):
 class Down(nn.Module):
     """Downscaling with maxpool then double conv"""
 
-    def __init__(self, sparsity, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool2d(2),
-            DoubleConv(sparsity, in_channels, out_channels)
+            DoubleConv(in_channels, out_channels)
         )
 
     def forward(self, x):
@@ -46,7 +49,7 @@ class Down(nn.Module):
 class Up(nn.Module):
     """Upscaling then double conv"""
 
-    def __init__(self, sparsity, in_channels, out_channels, bilinear=True):
+    def __init__(self, in_channels, out_channels, bilinear=True):
         super().__init__()
 
         # if bilinear, use the normal convolutions to reduce the number of channels
@@ -54,10 +57,10 @@ class Up(nn.Module):
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         else:
             #self.up = nn.ConvTranspose2d(in_channels // 2, in_channels // 2, kernel_size=2, stride=2)
-            self.up = SupermaskConvTranspose(sparsity=sparsity, in_channels=in_channels // 2,
+            self.up = SupermaskConvTranspose(sparsity=sparsity_glb, init_type=init_type_glb, in_channels=in_channels // 2,
                                              out_channels=in_channels // 2, kernel_size=2, stride=2, bias=False)
 
-        self.conv = DoubleConv(sparsity, in_channels, out_channels)
+        self.conv = DoubleConv(in_channels, out_channels)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -75,10 +78,10 @@ class Up(nn.Module):
 
 
 class OutConv(nn.Module):
-    def __init__(self, sparsity, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels):
         super(OutConv, self).__init__()
         #self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self.conv = SupermaskConv(sparsity=sparsity, in_channels=in_channels,
+        self.conv = SupermaskConv(sparsity=sparsity_glb, init_type=init_type_glb, in_channels=in_channels,
                                   out_channels=out_channels, kernel_size=1, bias=False)
 
     def forward(self, x):
@@ -86,22 +89,27 @@ class OutConv(nn.Module):
 
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_classes, sparsity, bilinear=True):
+    def __init__(self, n_channels, n_classes, sparsity, init_type, bilinear=True):
+        global sparsity_glb, init_type_glb
+        sparsity_glb = sparsity
+        init_type_glb = init_type
+
+        print('bilinear: {}'.format(bilinear))
         super(UNet, self).__init__()
         self.n_channels = n_channels
         self.n_classes = n_classes
         self.bilinear = bilinear
 
-        self.inc = DoubleConv(sparsity=sparsity, in_channels=n_channels, out_channels=64)
-        self.down1 = Down(sparsity, 64, 128)
-        self.down2 = Down(sparsity, 128, 256)
-        self.down3 = Down(sparsity, 256, 512)
-        self.down4 = Down(sparsity, 512, 512)
-        self.up1 = Up(sparsity, 1024, 256, bilinear)
-        self.up2 = Up(sparsity, 512, 128, bilinear)
-        self.up3 = Up(sparsity, 256, 64, bilinear)
-        self.up4 = Up(sparsity, 128, 64, bilinear)
-        self.outc = OutConv(sparsity=sparsity, in_channels=64, out_channels=n_classes)
+        self.inc = DoubleConv(in_channels=n_channels, out_channels=64)
+        self.down1 = Down(64, 128)
+        self.down2 = Down(128, 256)
+        self.down3 = Down(256, 512)
+        self.down4 = Down(512, 512)
+        self.up1 = Up(1024, 256, bilinear)
+        self.up2 = Up(512, 128, bilinear)
+        self.up3 = Up(256, 64, bilinear)
+        self.up4 = Up(128, 64, bilinear)
+        self.outc = OutConv(in_channels=64, out_channels=n_classes)
 
     def forward(self, x):
         x1 = self.inc(x)

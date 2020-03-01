@@ -5,27 +5,32 @@ import torch
 import torch.nn as nn
 from .layers import SupermaskLinear, SupermaskConv
 
+sparsity_glb = -1
+init_type_glb = ''
+
 
 class VGG(nn.Module):
-    def __init__(self, num_classes, features, sparsity=None, init_weights=True):
+    def __init__(self, num_classes, features):
         super(VGG, self).__init__()
         self.features = features
         self.num_classes = num_classes
         self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
-        self.sparsity = sparsity
+        self.sparsity = sparsity_glb
+        self.init_type = init_type_glb
+
         self.classifier = nn.Sequential(
-            #nn.Linear(512 * 7 * 7, 4096),
-            SupermaskLinear(in_features=512 * 7 * 7, out_features=4096, bias=False, sparsity=self.sparsity),
+            SupermaskLinear(in_features=512 * 7 * 7, out_features=4096, bias=False,
+                            sparsity=self.sparsity, init_type=self.init_type),
             nn.ReLU(True),
             nn.Dropout(),
-            #nn.Linear(4096, 4096),
-            SupermaskLinear(in_features=4096, out_features=4096, bias=False, sparsity=self.sparsity),
+            SupermaskLinear(in_features=4096, out_features=4096, bias=False,
+                            sparsity=self.sparsity, init_type=self.init_type),
             nn.ReLU(True),
             nn.Dropout(),
-            #nn.Linear(4096, num_classes),
-            SupermaskLinear(in_features=4096, out_features=num_classes, bias=False, sparsity=self.sparsity)
+            SupermaskLinear(in_features=4096, out_features=num_classes, bias=False,
+                            sparsity=self.sparsity, init_type=self.init_type)
         )
-        if init_weights:
+        if True:
             self._initialize_weights()
 
     def forward(self, x):
@@ -46,16 +51,15 @@ class VGG(nn.Module):
                 #nn.init.constant_(m.bias, 0)
 
 
-def make_layers(cfg, sparsity, batch_norm=False):
+def make_layers(cfg, batch_norm=False):
     layers = []
     in_channels = 3
     for v in cfg:
         if v == 'M':
             layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
         else:
-            #conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
-            conv2d = SupermaskConv(sparsity=sparsity, in_channels=in_channels, out_channels=v,
-                                   kernel_size=3, padding=1, bias=False)
+            conv2d = SupermaskConv(sparsity=sparsity_glb, init_type=init_type_glb, in_channels=in_channels,
+                                   out_channels=v, kernel_size=3, padding=1, bias=False)
             if batch_norm:
                 layers += [conv2d, nn.BatchNorm2d(v, affine=False), nn.ReLU(inplace=True)]
             else:
@@ -72,14 +76,19 @@ cfgs = {
 }
 
 
-def _vgg(num_classes, arch, cfg, batch_norm, sparsity, **kwargs):
-    model = VGG(num_classes, make_layers(cfgs[cfg], sparsity, batch_norm=batch_norm), sparsity, **kwargs)
+def _vgg(num_classes, arch, cfg, batch_norm, sparsity, init_type, **kwargs):
+    global sparsity_glb, init_type_glb
+    sparsity_glb = sparsity
+    init_type_glb = init_type
+
+    features = make_layers(cfgs[cfg], batch_norm=batch_norm)
+    model = VGG(num_classes, features, **kwargs)
     return model
 
 
-def vgg11(num_classes, sparsity, **kwargs):
-    return _vgg(num_classes, 'vgg11', 'A', False, sparsity, **kwargs)
+def vgg11(num_classes, sparsity, init_type, **kwargs):
+    return _vgg(num_classes, 'vgg11', 'A', False, sparsity, init_type, **kwargs)
 
 
-def vgg11_bn(num_classes, sparsity, **kwargs):
-    return _vgg(num_classes, 'vgg11', 'A', True, sparsity, **kwargs)
+def vgg11_bn(num_classes, sparsity, init_type,  **kwargs):
+    return _vgg(num_classes, 'vgg11', 'A', True, sparsity, init_type, **kwargs)
