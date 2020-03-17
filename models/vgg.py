@@ -92,3 +92,20 @@ def vgg11(num_classes, sparsity, init_type, **kwargs):
 
 def vgg11_bn(num_classes, sparsity, init_type,  **kwargs):
     return _vgg(num_classes, 'vgg11', 'A', True, sparsity, init_type, **kwargs)
+
+
+def vgg13(num_classes, sparsity, init_type, **kwargs):
+      return _vgg(num_classes, 'vgg13', 'B', False, sparsity, init_type, **kwargs)
+
+
+def vgg13_bn(num_classes, sparsity, init_type, **kwargs):
+    return _vgg(num_classes, 'vgg13_bn', 'B', True, sparsity, init_type, **kwargs)
+
+
+def vgg19(num_classes, sparsity, init_type, **kwargs):
+    return _vgg(num_classes, 'vgg19', 'E', False, sparsity, init_type, **kwargs)
+
+
+def vgg19_bn(num_classes, sparsity, init_type, **kwargs):
+    return _vgg(num_classes, 'vgg19', 'E', True, sparsity, init_type, **kwargs)
+

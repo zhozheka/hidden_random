@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 import torch
 from torch import nn
 import torchvision
@@ -24,13 +25,18 @@ class Trainer:
             args.dataset,
             datetime.now().strftime('%Y_%b_%d_%H:%M:%S')
         )
-        self.model_dir = os.path.join(config.models_dir, self.model_name)
+        if args.bilinear:
+            self.model_name = self.model_name + '_bilinear'
+
+        self.model_dir = os.path.join(args.models_dir, self.model_name)
         os.mkdir(self.model_dir)
 
         self.logger = get_logger(os.path.join(self.model_dir, 'training.log'))
         self.logger.info(args)
         self.logger.info('Model dir: {}'.format(self.model_dir))
         self.args = args
+        json.dump(args.__dict__,
+                  fp=open(os.path.join(self.model_dir, 'args.json'), 'w'))
 
         self.save_chp = not args.not_save
         self.device = torch.device('cuda:{}'.format(args.cuda))
@@ -41,9 +47,6 @@ class Trainer:
         self.epochs = args.epochs
         self.init_type = args.init_type
         self.model = get_model(args, self.num_classes, sparsity=self.sparsity, init_type=self.init_type).to(self.device)
-
-        if args.from_checkpoint:
-            self.load_checkpoint(args.from_checkpoint)
 
         self.optimizer = torch.optim.SGD([p for p in self.model.parameters() if p.requires_grad],
                                          lr=args.lr,  momentum=args.momentum, weight_decay=args.wd)
@@ -115,7 +118,7 @@ class Trainer:
         score = meter_iou.avg if self.dataset_name == 'bowl' else meter_accuracy.avg
         return meter_loss.avg, score
 
-    def save_model(self, name, epoch=None):
+    def save_model(self, name, val_score=0, epoch=None):
         chp = {
             'state_dict': self.model.state_dict(),
             'epoch': epoch,
@@ -123,7 +126,9 @@ class Trainer:
             'num_classes': self.num_classes,
             'dataset': self.dataset_name,
             'sparsity': self.sparsity,
-            'optimizer': self.optimizer
+            'optimizer': self.optimizer,
+            'val_score': val_score,
+            'model_name': self.model_name
         }
 
         chp_path = os.path.join(self.model_dir, '{}.pth'.format(name))
@@ -146,7 +151,7 @@ class Trainer:
             if val_score > self.best_score:  # trying to maximize
                 self.best_score = val_score
                 self.logger.info('New best checkpoint')
-                self.save_model('best', epoch)
+                self.save_model('best', val_score, epoch)
 
             # self.scheduler.step(val_loss)
             self.scheduler.step(epoch)
@@ -189,7 +194,8 @@ class Trainer:
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('-cuda', default=0, type=int)
-    parser.add_argument('-model', default='vgg11bn_s')
+    parser.add_argument('-models_dir', default=config.models_dir)
+    parser.add_argument('-model', default='vgg11bn')
     parser.add_argument('-epochs', default=20, type=int)
     parser.add_argument('-lr', default=0.1, type=float)
     parser.add_argument('-save_interval', default=-1, type=int)
@@ -203,7 +209,6 @@ def parse_args():
     parser.add_argument('-patience', default=5, type=int),
     parser.add_argument('-bilinear', action='store_true', help='Upsampling for U-net')
     parser.add_argument('-init_type', default='normal')
-    parser.add_argument('-from_checkpoint', default='')
     args = parser.parse_args()
     return args
 

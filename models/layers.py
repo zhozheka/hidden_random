@@ -1,3 +1,6 @@
+"""
+Based on https://github.com/allenai/hidden-networks/blob/master/simple_mnist_example.py
+"""
 import torch
 from torch import autograd, nn
 from torch.nn import functional as F
