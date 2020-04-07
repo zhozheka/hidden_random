@@ -48,6 +48,11 @@ class Trainer:
         self.init_type = args.init_type
         self.model = get_model(args, self.num_classes, sparsity=self.sparsity, init_type=self.init_type).to(self.device)
 
+        if self.sparsity == 1:
+            self.logger.info('sparsity is 100%, train network weights')
+            for n, p in self.model.named_parameters():
+                p.requires_grad = not p.requires_grad
+
         self.optimizer = torch.optim.SGD([p for p in self.model.parameters() if p.requires_grad],
                                          lr=args.lr,  momentum=args.momentum, weight_decay=args.wd)
 

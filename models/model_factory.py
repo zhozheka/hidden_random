@@ -3,10 +3,10 @@ from .vgg import *
 from .simplenet import SimpleNet
 from .unet import UNet
 from .resnet import *
+import torchvision.models
 
 
 def get_model(args, num_classes, sparsity, init_type, **kwargs):
-    model = vgg11_bn(num_classes, sparsity, init_type, **kwargs)
     if args.model == 'vgg11':
         model = vgg11(num_classes, sparsity, init_type, **kwargs)
 
